@@ -4,8 +4,8 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 
 from app.api.parse import router as parse_router
 from app.api.download import router as download_router
@@ -40,10 +40,21 @@ app.add_middleware(
 app.include_router(parse_router, prefix="/api")
 app.include_router(download_router, prefix="/api")
 
-static_dir = Path(__file__).parent / "static"
-app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+_dist_dir = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+if _dist_dir.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(_dist_dir / "assets")), name="assets")
 
 
-@app.get("/")
-async def index():
-    return FileResponse(str(static_dir / "index.html"))
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str):
+    """Serve Vue SPA build output; fall back to index.html for client-side routing."""
+    if not _dist_dir.is_dir():
+        return JSONResponse(
+            {"detail": "Frontend not built. Run: cd frontend && npm run build"},
+            status_code=503,
+        )
+    candidate = _dist_dir / full_path
+    if candidate.is_file():
+        return FileResponse(str(candidate))
+    return FileResponse(str(_dist_dir / "index.html"))

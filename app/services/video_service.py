@@ -63,6 +63,22 @@ _URL_RE = re.compile(
     r"https?://[^\s<>\"'\u4e00-\u9fff\uff00-\uffef]+", re.IGNORECASE
 )
 
+_DIRECT_DOMAINS = (
+    "bilibili.com", "b23.tv",
+    "xiaohongshu.com", "xhslink.com",
+    "weibo.com", "weibo.cn",
+    "kuaishou.com",
+    "ixigua.com",
+    "douyin.com", "iesdouyin.com",
+)
+
+
+def _should_bypass_proxy(url: str) -> bool:
+    """Return True if the URL targets a domestic site that should not go through proxy."""
+    from urllib.parse import urlparse
+    host = urlparse(url).hostname or ""
+    return any(host == d or host.endswith("." + d) for d in _DIRECT_DOMAINS)
+
 
 def extract_url(text: str) -> str | None:
     """Find the first HTTP(S) URL inside *text*, or return None."""
@@ -142,6 +158,9 @@ async def extract_info(url: str, _retries: int = 2) -> dict[str, Any]:
         "noplaylist": True,
         "ignore_no_formats_error": True,
     }
+
+    if _should_bypass_proxy(url):
+        ydl_opts["proxy"] = ""
 
     loop = asyncio.get_running_loop()
 
@@ -261,6 +280,8 @@ async def start_download(
                 "ignore_no_formats_error": True,
                 "progress_hooks": [_progress_hook],
             }
+            if _should_bypass_proxy(url):
+                ydl_opts["proxy"] = ""
             with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 task.title = info.get("title", "")

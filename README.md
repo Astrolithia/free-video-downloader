@@ -7,14 +7,15 @@
 ### 前置依赖
 
 - Python 3.10+
+- Node.js 18+（用于前端构建）
 - ffmpeg（用于音视频合并）
 
 ```bash
 # macOS
-brew install ffmpeg
+brew install ffmpeg node
 
 # Ubuntu / Debian
-sudo apt install ffmpeg
+sudo apt install ffmpeg nodejs npm
 ```
 
 ### 安装 & 启动
@@ -23,11 +24,28 @@ sudo apt install ffmpeg
 # 安装 Python 依赖
 pip install -r requirements.txt
 
+# 安装前端依赖并构建
+cd frontend && npm install && npm run build && cd ..
+
 # 启动服务
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 打开浏览器访问 `http://localhost:8000` 即可使用。
+
+### 开发模式
+
+前后端分别启动，享受 Vite HMR 热更新：
+
+```bash
+# 终端 1：启动后端
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# 终端 2：启动前端开发服务器
+cd frontend && npm run dev
+```
+
+开发时访问 `http://localhost:5173`，API 请求自动代理到后端。
 
 ## 功能
 
@@ -42,7 +60,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 | -------- | ------------------ |
 | 后端     | FastAPI + uvicorn  |
 | 核心引擎 | yt-dlp (Python API) |
-| 前端     | HTML + TailwindCSS + Vanilla JS |
+| 前端     | Vue 3 + Tailwind CSS + TypeScript (Vite) |
 | 进度推送 | Server-Sent Events |
 
 ## 免责声明
