@@ -145,7 +145,7 @@ def _simplify_formats(raw_formats: list[dict]) -> list[dict]:
     return result
 
 
-async def extract_info(url: str, _retries: int = 2) -> dict[str, Any]:
+async def extract_info(url: str, _retries: int = 3) -> dict[str, Any]:
     """Extract video metadata without downloading. Retries on transient failures."""
 
     if _douyin.is_douyin_url(url):
@@ -157,6 +157,7 @@ async def extract_info(url: str, _retries: int = 2) -> dict[str, Any]:
         "skip_download": True,
         "noplaylist": True,
         "ignore_no_formats_error": True,
+        "extractor_retries": 3,
     }
 
     if _should_bypass_proxy(url):
@@ -177,7 +178,7 @@ async def extract_info(url: str, _retries: int = 2) -> dict[str, Any]:
         except Exception as exc:
             last_exc = exc
             if attempt < _retries:
-                await asyncio.sleep(1)
+                await asyncio.sleep(min(2 ** (attempt + 1), 8))
     else:
         raise last_exc  # type: ignore[misc]
 

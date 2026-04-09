@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 downloads/
 .DS_Store
+.env
 
 # Frontend
 frontend/node_modules/

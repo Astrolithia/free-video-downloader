@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.services.video_service import extract_info, extract_url
+from app.services.subtitle_service import extract_subtitles
 
 router = APIRouter()
 
@@ -34,6 +35,20 @@ async def parse_video(req: ParseRequest):
         info["thumbnail"] = f"/api/thumb?url={thumb}"
 
     return info
+
+
+@router.post("/subtitle")
+async def get_subtitle(req: ParseRequest):
+    url = extract_url(req.url)
+    if not url:
+        raise HTTPException(status_code=400, detail="请输入有效的视频链接")
+
+    try:
+        result = await extract_subtitles(url)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"字幕提取失败: {exc}")
+
+    return result
 
 
 @router.get("/thumb")
