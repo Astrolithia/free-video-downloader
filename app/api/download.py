@@ -10,7 +10,7 @@ from app.services.video_service import (
     start_download,
     get_task,
     cleanup_task,
-    looks_like_url,
+    extract_url,
 )
 
 router = APIRouter()
@@ -24,8 +24,8 @@ class DownloadRequest(BaseModel):
 
 @router.post("/download")
 async def download_video(req: DownloadRequest):
-    url = req.url.strip()
-    if not looks_like_url(url):
+    url = extract_url(req.url)
+    if not url:
         raise HTTPException(status_code=400, detail="请输入有效的视频链接")
 
     task = await start_download(url, req.format_id, req.audio_id)

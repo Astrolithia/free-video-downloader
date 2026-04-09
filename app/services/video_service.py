@@ -13,6 +13,8 @@ from typing import Any
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
+from app.services import douyin as _douyin
+
 DOWNLOADS_DIR = Path("downloads")
 DOWNLOADS_DIR.mkdir(exist_ok=True)
 
@@ -58,12 +60,14 @@ def get_task(task_id: str) -> DownloadTask | None:
 # ---------------------------------------------------------------------------
 
 _URL_RE = re.compile(
-    r"https?://[^\s<>\"']+", re.IGNORECASE
+    r"https?://[^\s<>\"'\u4e00-\u9fff\uff00-\uffef]+", re.IGNORECASE
 )
 
 
-def looks_like_url(text: str) -> bool:
-    return bool(_URL_RE.fullmatch(text.strip()))
+def extract_url(text: str) -> str | None:
+    """Find the first HTTP(S) URL inside *text*, or return None."""
+    m = _URL_RE.search(text.strip())
+    return m.group(0).rstrip(",.;!?)\u3002\uff01") if m else None
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +131,11 @@ def _simplify_formats(raw_formats: list[dict]) -> list[dict]:
 
 async def extract_info(url: str, _retries: int = 2) -> dict[str, Any]:
     """Extract video metadata without downloading. Retries on transient failures."""
-    ydl_opts = {
+
+    if _douyin.is_douyin_url(url):
+        return await _douyin.extract_info(url)
+
+    ydl_opts: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
@@ -188,6 +196,31 @@ async def start_download(
 
     loop = asyncio.get_running_loop()
 
+    # ---- Douyin: custom downloader (no yt-dlp, no cookies) ----------------
+    if _douyin.is_douyin_url(url):
+        def _douyin_progress(pct: float, speed: str):
+            task.status = "downloading"
+            task.percent = pct
+            task.speed = speed
+            task.emit({"status": "downloading", "percent": pct, "speed": speed, "eta": ""})
+
+        def _run_douyin():
+            try:
+                out = str(DOWNLOADS_DIR / f"{task_id}.mp4")
+                _douyin.download_sync(url, out, progress_cb=_douyin_progress)
+                task.filename = out
+                task.status = "done"
+                task.percent = 100.0
+                task.emit({"status": "done", "percent": 100.0, "filename": out})
+            except Exception as exc:
+                task.status = "error"
+                task.error = str(exc)
+                task.emit({"status": "error", "error": task.error})
+
+        loop.run_in_executor(None, _run_douyin)
+        return task
+
+    # ---- Generic: yt-dlp --------------------------------------------------
     def _progress_hook(d: dict):
         if d["status"] == "downloading":
             task.status = "downloading"

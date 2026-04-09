@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.services.video_service import extract_info, looks_like_url
+from app.services.video_service import extract_info, extract_url
 
 router = APIRouter()
 
@@ -16,8 +16,8 @@ class ParseRequest(BaseModel):
 
 @router.post("/parse")
 async def parse_video(req: ParseRequest):
-    url = req.url.strip()
-    if not looks_like_url(url):
+    url = extract_url(req.url)
+    if not url:
         raise HTTPException(status_code=400, detail="请输入有效的视频链接")
 
     try:

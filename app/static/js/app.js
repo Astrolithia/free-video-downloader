@@ -90,7 +90,7 @@ async function parseVideo() {
         }
 
         hideError();
-        currentVideoUrl = url;
+        currentVideoUrl = data.webpage_url || url;
         renderResult(data);
     } catch (e) {
         showError("网络错误，请稍后重试");
