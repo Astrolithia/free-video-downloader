@@ -71,7 +71,23 @@ def looks_like_url(text: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def _simplify_formats(raw_formats: list[dict]) -> list[dict]:
-    """Return a de-duped, user-friendly list of download options."""
+    """Return a de-duped, user-friendly list of download options.
+
+    Also picks the best audio-only stream so the frontend can request
+    ``video_format_id+audio_format_id`` for a guaranteed merge.
+    """
+    best_audio_id: str = ""
+    best_audio_abr: float = 0
+
+    for f in raw_formats:
+        vcodec = f.get("vcodec", "none")
+        acodec = f.get("acodec", "none")
+        if vcodec == "none" and acodec != "none":
+            abr = f.get("abr") or f.get("tbr") or 0
+            if abr > best_audio_abr:
+                best_audio_abr = abr
+                best_audio_id = f.get("format_id", "")
+
     seen: set[str] = set()
     result: list[dict] = []
 
@@ -102,19 +118,21 @@ def _simplify_formats(raw_formats: list[dict]) -> list[dict]:
             "label": label,
             "has_audio": has_audio,
             "filesize": filesize,
+            "best_audio_id": best_audio_id,
         })
 
     result.sort(key=lambda x: x.get("height") or 0, reverse=True)
     return result
 
 
-async def extract_info(url: str) -> dict[str, Any]:
-    """Extract video metadata without downloading."""
+async def extract_info(url: str, _retries: int = 2) -> dict[str, Any]:
+    """Extract video metadata without downloading. Retries on transient failures."""
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
         "noplaylist": True,
+        "ignore_no_formats_error": True,
     }
 
     loop = asyncio.get_running_loop()
@@ -123,7 +141,18 @@ async def extract_info(url: str) -> dict[str, Any]:
         with YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=False)
 
-    info = await loop.run_in_executor(None, _extract)
+    last_exc: Exception | None = None
+    info: dict[str, Any] = {}
+    for attempt in range(_retries + 1):
+        try:
+            info = await loop.run_in_executor(None, _extract)
+            break
+        except Exception as exc:
+            last_exc = exc
+            if attempt < _retries:
+                await asyncio.sleep(1)
+    else:
+        raise last_exc  # type: ignore[misc]
 
     formats = _simplify_formats(info.get("formats") or [])
 
@@ -147,7 +176,11 @@ async def extract_info(url: str) -> dict[str, Any]:
 # Download
 # ---------------------------------------------------------------------------
 
-async def start_download(url: str, format_id: str | None = None) -> DownloadTask:
+async def start_download(
+    url: str,
+    format_id: str | None = None,
+    audio_id: str | None = None,
+) -> DownloadTask:
     """Create a download task and run it in a background thread."""
     task_id = uuid.uuid4().hex[:12]
     task = DownloadTask(task_id=task_id, url=url)
@@ -179,7 +212,12 @@ async def start_download(url: str, format_id: str | None = None) -> DownloadTask
 
     def _run():
         try:
-            fmt = format_id if format_id else "bv*+ba/b"
+            if format_id and audio_id:
+                fmt = f"{format_id}+{audio_id}/{format_id}/b"
+            elif format_id:
+                fmt = f"{format_id}+bestaudio/{format_id}/b"
+            else:
+                fmt = "bv*+ba/b"
             ydl_opts: dict[str, Any] = {
                 "format": fmt,
                 "outtmpl": str(DOWNLOADS_DIR / f"{task_id}.%(ext)s"),
@@ -187,6 +225,7 @@ async def start_download(url: str, format_id: str | None = None) -> DownloadTask
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
+                "ignore_no_formats_error": True,
                 "progress_hooks": [_progress_hook],
             }
             with YoutubeDL(ydl_opts) as ydl:

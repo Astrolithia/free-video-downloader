@@ -140,7 +140,7 @@ function renderResult(info) {
 function selectFormat(pill, f) {
     document.querySelectorAll(".format-pill").forEach((p) => p.classList.remove("active"));
     pill.classList.add("active");
-    selectedFormat = f.format_id;
+    selectedFormat = f;
     downloadBtn.disabled = false;
     downloadBtn.textContent = `下载 ${f.label} (${f.ext.toUpperCase()})`;
 }
@@ -158,7 +158,11 @@ async function startDownload() {
         const res = await fetch("/api/download", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: currentVideoUrl, format_id: selectedFormat }),
+            body: JSON.stringify({
+                url: currentVideoUrl,
+                format_id: selectedFormat.format_id,
+                audio_id: selectedFormat.best_audio_id || null,
+            }),
         });
         const data = await res.json();
         if (!res.ok) {

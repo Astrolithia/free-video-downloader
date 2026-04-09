@@ -19,6 +19,7 @@ router = APIRouter()
 class DownloadRequest(BaseModel):
     url: str
     format_id: str | None = None
+    audio_id: str | None = None
 
 
 @router.post("/download")
@@ -27,7 +28,7 @@ async def download_video(req: DownloadRequest):
     if not looks_like_url(url):
         raise HTTPException(status_code=400, detail="请输入有效的视频链接")
 
-    task = await start_download(url, req.format_id)
+    task = await start_download(url, req.format_id, req.audio_id)
     return {"task_id": task.task_id}
 
 
