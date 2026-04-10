@@ -1,5 +1,6 @@
 import asyncio
 import json
+import mimetypes
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -7,6 +8,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.services.video_service import (
+    DOWNLOADS_DIR,
     start_download,
     get_task,
     cleanup_task,
@@ -20,6 +22,40 @@ class DownloadRequest(BaseModel):
     url: str
     format_id: str | None = None
     audio_id: str | None = None
+
+
+def _resolve_downloaded_file(task_id: str) -> Path | None:
+    exact_mp4 = DOWNLOADS_DIR / f"{task_id}.mp4"
+    if exact_mp4.exists():
+        return exact_mp4
+
+    candidates = sorted(DOWNLOADS_DIR.glob(f"{task_id}.*"))
+    if not candidates:
+        return None
+
+    mp4_candidates = [p for p in candidates if p.suffix.lower() == ".mp4"]
+    if mp4_candidates:
+        return sorted(mp4_candidates, key=lambda p: (len(p.name), p.name))[0]
+
+    return candidates[0]
+
+
+def _get_task_file(task_id: str) -> tuple[Path, str]:
+    task = get_task(task_id)
+    filepath: Path | None = None
+    title = "video"
+
+    if task and task.filename:
+      filepath = Path(task.filename)
+      title = task.title or title
+      if filepath.exists():
+          return filepath, title
+
+    fallback = _resolve_downloaded_file(task_id)
+    if fallback:
+        return fallback, title
+
+    raise HTTPException(status_code=404, detail="文件不存在")
 
 
 @router.post("/download")
@@ -69,16 +105,12 @@ async def progress_stream(task_id: str):
 @router.get("/file/{task_id}")
 async def get_file(task_id: str):
     task = get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="任务不存在")
-    if task.status != "done":
+    if task and task.status != "done":
         raise HTTPException(status_code=400, detail="文件尚未准备好")
 
-    filepath = Path(task.filename)
-    if not filepath.exists():
-        raise HTTPException(status_code=404, detail="文件不存在")
+    filepath, title = _get_task_file(task_id)
 
-    safe_title = (task.title or "video").replace("/", "_").replace("\\", "_")
+    safe_title = title.replace("/", "_").replace("\\", "_")
     ext = filepath.suffix
     download_name = f"{safe_title}{ext}"
 
@@ -86,4 +118,22 @@ async def get_file(task_id: str):
         path=str(filepath),
         filename=download_name,
         media_type="application/octet-stream",
+    )
+
+
+@router.get("/play/{task_id}")
+async def play_file(task_id: str):
+    task = get_task(task_id)
+    if task and task.status != "done":
+        raise HTTPException(status_code=400, detail="文件尚未准备好")
+
+    filepath, _ = _get_task_file(task_id)
+
+    media_type, _ = mimetypes.guess_type(filepath.name)
+
+    return FileResponse(
+        path=str(filepath),
+        media_type=media_type or "video/mp4",
+        filename=filepath.name,
+        content_disposition_type="inline",
     )

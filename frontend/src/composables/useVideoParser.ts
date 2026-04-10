@@ -16,6 +16,7 @@ export interface VideoInfo {
   webpage_url: string
   extractor: string
   formats: VideoFormat[]
+  stream_format_id: string | null
 }
 
 export function useVideoParser() {

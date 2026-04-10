@@ -52,6 +52,9 @@ function fileUrl(taskId: string): string {
       >
         💾 保存到本地
       </a>
+      <p v-if="progress.status === 'done'" class="mt-3 text-sm text-slate-500">
+        下载完成后，封面区域会切换为页内播放器，并播放本次下载好的视频。
+      </p>
     </div>
   </section>
 </template>

@@ -1,11 +1,11 @@
 from urllib.parse import unquote
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.services.video_service import extract_info, extract_url
+from app.services.video_service import extract_info, extract_url, get_best_stream_format_id, get_stream_source
 from app.services.subtitle_service import extract_subtitles
 
 router = APIRouter()
@@ -33,6 +33,9 @@ async def parse_video(req: ParseRequest):
     thumb = info.get("thumbnail", "")
     if thumb:
         info["thumbnail"] = f"/api/thumb?url={thumb}"
+
+    # Add the best previewable stream ID for the in-page player
+    info["stream_format_id"] = get_best_stream_format_id(url)
 
     return info
 
@@ -66,3 +69,58 @@ async def proxy_thumbnail(url: str):
             )
     except Exception:
         raise HTTPException(status_code=502, detail="缩略图加载失败")
+
+
+@router.get("/stream")
+async def stream_video(request: Request, url: str, format_id: str = ""):
+    """Proxy video stream with Range support for HTML5 video player."""
+    if not url:
+        raise HTTPException(status_code=400, detail="缺少视频 URL")
+
+    stream_source = get_stream_source(url, format_id or None)
+    if not stream_source:
+        raise HTTPException(status_code=404, detail="视频流不可用，请先解析视频")
+    stream_url, upstream_headers = stream_source
+
+    range_header = request.headers.get("range", "")
+
+    headers = {
+        k: v
+        for k, v in upstream_headers.items()
+        if k.lower() != "accept-encoding"
+    }
+    headers.setdefault("Referer", url)
+    if range_header:
+        headers["Range"] = range_header
+
+    async with httpx.AsyncClient(follow_redirects=True, timeout=60) as client:
+        req = client.build_request("GET", stream_url, headers=headers)
+        resp = await client.send(req, stream=True)
+
+        resp_headers = {}
+        if "content-range" in resp.headers:
+            resp_headers["Content-Range"] = resp.headers["content-range"]
+        if "content-length" in resp.headers:
+            resp_headers["Content-Length"] = resp.headers["content-length"]
+        if "accept-ranges" in resp.headers:
+            resp_headers["Accept-Ranges"] = resp.headers["accept-ranges"]
+        else:
+            resp_headers["Accept-Ranges"] = "bytes"
+        resp_headers["Content-Type"] = resp.headers.get("content-type", "video/mp4")
+        resp_headers["Cache-Control"] = "no-cache"
+
+        status_code = resp.status_code
+
+        async def generate():
+            try:
+                async for chunk in resp.aiter_bytes(chunk_size=65536):
+                    yield chunk
+            finally:
+                await resp.aclose()
+
+        return StreamingResponse(
+            generate(),
+            status_code=status_code,
+            headers=resp_headers,
+            media_type=resp_headers.get("Content-Type", "video/mp4"),
+        )

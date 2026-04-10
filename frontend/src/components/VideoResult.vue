@@ -2,9 +2,11 @@
 import { ref, watch } from 'vue'
 import type { VideoInfo, VideoFormat } from '@/composables/useVideoParser'
 import FormatPill from './FormatPill.vue'
+import VideoPlayer from './VideoPlayer.vue'
 
 const props = defineProps<{
   info: VideoInfo
+  playerSrc?: string
 }>()
 
 const emit = defineEmits<{
@@ -43,8 +45,20 @@ function onDownload() {
   <section class="max-w-2xl mx-auto px-5 pb-12 fade-in-up">
     <div class="result-card rounded-3xl overflow-hidden">
       <div class="relative">
-        <img :src="info.thumbnail" :alt="info.title" class="w-full aspect-video object-cover bg-slate-200" />
-        <span v-if="info.duration" class="absolute bottom-3 right-3 bg-black/70 text-white text-xs px-2 py-1 rounded-lg">
+        <VideoPlayer
+          v-if="playerSrc"
+          :src="playerSrc"
+        />
+        <img
+          v-else
+          :src="info.thumbnail"
+          :alt="info.title"
+          class="w-full aspect-video object-cover bg-slate-200"
+        />
+        <span
+          v-if="info.duration && !playerSrc"
+          class="absolute bottom-3 right-3 bg-black/70 text-white text-xs px-2 py-1 rounded-lg"
+        >
           {{ formatDuration(info.duration) }}
         </span>
       </div>

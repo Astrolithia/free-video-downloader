@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import NavBar from './components/NavBar.vue'
 import HeroSection from './components/HeroSection.vue'
 import VideoResult from './components/VideoResult.vue'
@@ -15,10 +15,23 @@ const url = ref('')
 const { videoInfo, isParsing, parseError, parseVideo, debouncedParse } = useVideoParser()
 const { progress, startDownload } = useDownloader()
 const { setVideo } = useAIFeatures()
+const inlinePlayerSrc = ref('')
+
+const downloadedVideoUrl = computed(() => {
+  if (progress.status !== 'done' || !progress.taskId) return ''
+  return `/api/play/${progress.taskId}`
+})
 
 watch(videoInfo, (info) => {
   if (info) {
     setVideo(info.webpage_url, info.title)
+  }
+  inlinePlayerSrc.value = ''
+})
+
+watch(downloadedVideoUrl, (src) => {
+  if (src && inlinePlayerSrc.value !== src) {
+    inlinePlayerSrc.value = src
   }
 })
 
@@ -31,6 +44,7 @@ function onPaste(inputUrl: string) {
 }
 
 function onDownload(webpageUrl: string, formatId: string, audioId: string | null) {
+  inlinePlayerSrc.value = ''
   startDownload(webpageUrl, formatId, audioId)
 }
 </script>
@@ -49,6 +63,7 @@ function onDownload(webpageUrl: string, formatId: string, audioId: string | null
   <VideoResult
     v-if="videoInfo"
     :info="videoInfo"
+    :player-src="inlinePlayerSrc"
     @download="onDownload"
   />
 

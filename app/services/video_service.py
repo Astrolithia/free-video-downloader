@@ -15,6 +15,27 @@ from yt_dlp.utils import DownloadError
 
 from app.services import douyin as _douyin
 
+# ---------------------------------------------------------------------------
+# In-memory cache for raw yt-dlp info (preserves direct URLs)
+# ---------------------------------------------------------------------------
+_info_cache: dict[str, tuple[float, dict]] = {}   # url -> (timestamp, raw_info)
+_CACHE_TTL = 600  # 10 minutes
+
+
+def cache_raw_info(url: str, raw_info: dict):
+    _info_cache[url] = (time.time(), raw_info)
+
+
+def get_cached_raw_info(url: str) -> dict | None:
+    entry = _info_cache.get(url)
+    if not entry:
+        return None
+    ts, info = entry
+    if time.time() - ts > _CACHE_TTL:
+        del _info_cache[url]
+        return None
+    return info
+
 DOWNLOADS_DIR = Path("downloads")
 DOWNLOADS_DIR.mkdir(exist_ok=True)
 
@@ -149,7 +170,20 @@ async def extract_info(url: str, _retries: int = 3) -> dict[str, Any]:
     """Extract video metadata without downloading. Retries on transient failures."""
 
     if _douyin.is_douyin_url(url):
-        return await _douyin.extract_info(url)
+        info = await _douyin.extract_info(url)
+        # Cache raw info for streaming support (Douyin has direct download URLs)
+        dl_url = _douyin._download_url_cache.get(info.get("webpage_url", url), "")
+        if dl_url:
+            cache_raw_info(url, {
+                "formats": [{
+                    "format_id": "douyin_best",
+                    "url": dl_url,
+                    "vcodec": "h264",
+                    "acodec": "aac",
+                    "height": (info.get("formats") or [{}])[0].get("height"),
+                }]
+            })
+        return info
 
     ydl_opts: dict[str, Any] = {
         "quiet": True,
@@ -182,6 +216,7 @@ async def extract_info(url: str, _retries: int = 3) -> dict[str, Any]:
     else:
         raise last_exc  # type: ignore[misc]
 
+    cache_raw_info(url, info)
     formats = _simplify_formats(info.get("formats") or [])
 
     thumbnail = info.get("thumbnail", "")
@@ -335,3 +370,77 @@ def cleanup_stale_files(max_age_seconds: int = 600):
                 _tasks.pop(task_prefix, None)
             except OSError:
                 pass
+
+
+# ---------------------------------------------------------------------------
+# Stream helpers
+# ---------------------------------------------------------------------------
+
+def get_stream_url(url: str, format_id: str | None = None) -> str | None:
+    """Return the direct video URL from cached yt-dlp info for streaming."""
+    stream = get_stream_source(url, format_id)
+    if not stream:
+        return None
+    return stream[0]
+
+
+def _pick_stream_format(formats: list[dict], format_id: str | None = None) -> dict | None:
+    """Pick the best playable stream, preferring muxed AV and falling back to video-only."""
+    if format_id:
+        for f in formats:
+            if f.get("format_id") == format_id and f.get("url"):
+                return f
+
+    best_muxed: dict | None = None
+    best_video_only: dict | None = None
+    best_muxed_height = -1
+    best_video_only_height = -1
+
+    for f in formats:
+        if not f.get("url"):
+            continue
+
+        vcodec = f.get("vcodec", "none")
+        acodec = f.get("acodec", "none")
+        height = f.get("height") or 0
+
+        if vcodec == "none":
+            continue
+
+        if acodec != "none" and height > best_muxed_height:
+            best_muxed_height = height
+            best_muxed = f
+
+        if height > best_video_only_height:
+            best_video_only_height = height
+            best_video_only = f
+
+    return best_muxed or best_video_only
+
+
+def get_stream_source(url: str, format_id: str | None = None) -> tuple[str, dict[str, str]] | None:
+    """Return the direct video URL plus any upstream headers required to fetch it."""
+    raw = get_cached_raw_info(url)
+    if not raw:
+        return None
+
+    selected = _pick_stream_format(raw.get("formats") or [], format_id)
+    if not selected:
+        return None
+
+    headers = {
+        str(k): str(v)
+        for k, v in (selected.get("http_headers") or {}).items()
+        if v
+    }
+    return selected["url"], headers
+
+
+def get_best_stream_format_id(url: str) -> str | None:
+    """Return the format_id of the best previewable stream for the HTML5 player."""
+    raw = get_cached_raw_info(url)
+    if not raw:
+        return None
+
+    selected = _pick_stream_format(raw.get("formats") or [])
+    return selected.get("format_id") if selected else None

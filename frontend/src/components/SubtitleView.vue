@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useAIFeatures, type SubtitleSegment } from '@/composables/useAIFeatures'
+import { useVideoPlayer } from '@/composables/useVideoPlayer'
 
 const { subtitleData, isLoadingSubtitle, subtitleError, fetchSubtitle } = useAIFeatures()
+const { seekTo } = useVideoPlayer()
 
 const searchQuery = ref('')
 
@@ -61,6 +63,10 @@ function downloadAsTXT() {
   a.click()
   URL.revokeObjectURL(a.href)
 }
+
+function onTimestampClick(seconds: number) {
+  seekTo(seconds)
+}
 </script>
 
 <template>
@@ -115,7 +121,7 @@ function downloadAsTXT() {
           :key="i"
           class="subtitle-item"
         >
-          <span class="subtitle-time">{{ formatTime(seg.start) }}</span>
+          <span class="subtitle-time cursor-pointer hover:text-indigo-600 transition-colors" @click="onTimestampClick(seg.start)">{{ formatTime(seg.start) }}</span>
           <span class="subtitle-text">{{ seg.text }}</span>
         </div>
         <p v-if="filteredSubtitles.length === 0" class="text-center text-slate-400 text-sm py-4">
