@@ -41,6 +41,19 @@ class DownloadPlaybackTests(unittest.TestCase):
         self.assertEqual(response.headers["content-type"], "video/mp4")
         self.assertIn("inline", response.headers.get("content-disposition", ""))
 
+    def test_play_route_prefers_final_mp4_over_intermediate_task_filename(self):
+        audio_path = DOWNLOADS_DIR / "playable-task.m4a"
+        audio_path.write_bytes(b"fake-audio")
+        _tasks["playable-task"].filename = str(audio_path)
+
+        response = self.client.get("/api/play/playable-task")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "video/mp4")
+        self.assertIn("playable-task.mp4", response.headers.get("content-disposition", ""))
+
+        audio_path.unlink()
+
 
 if __name__ == "__main__":
     unittest.main()

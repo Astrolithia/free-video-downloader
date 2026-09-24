@@ -42,16 +42,22 @@ def _resolve_downloaded_file(task_id: str) -> Path | None:
 
 def _get_task_file(task_id: str) -> tuple[Path, str]:
     task = get_task(task_id)
-    filepath: Path | None = None
     title = "video"
+    fallback = _resolve_downloaded_file(task_id)
+
+    if task:
+        title = task.title or title
+
+    # Prefer the final merged MP4 when it exists, even if task.filename
+    # still points at an intermediate download artifact.
+    if fallback and fallback.suffix.lower() == ".mp4":
+        return fallback, title
 
     if task and task.filename:
-      filepath = Path(task.filename)
-      title = task.title or title
-      if filepath.exists():
-          return filepath, title
+        filepath = Path(task.filename)
+        if filepath.exists():
+            return filepath, title
 
-    fallback = _resolve_downloaded_file(task_id)
     if fallback:
         return fallback, title
 

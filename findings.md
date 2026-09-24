@@ -1,29 +1,40 @@
 # 调研发现
 
-## 文档侧
+## 文档与现状
 
-1. [docs/需求分析.md](/Users/shiro/Documents/Developer/free-video-downloader/docs/需求分析.md) 当前正式定义的下载完成行为是“显示保存文件按钮”，没有要求页内播放器。
-2. [docs/方案设计.md](/Users/shiro/Documents/Developer/free-video-downloader/docs/方案设计.md) 里 `VideoResult.vue` 的职责仍是“缩略图、标题、格式选择、下载按钮”，播放器是新增交互，不属于原设计基线。
-3. 当前产品主线仍是“解析 -> 下载 -> 保存文件”，AI 总结和字幕是增值能力，播放器属于新扩展功能。
+1. [docs/需求分析.md](/Users/shiro/Documents/Developer/free-video-downloader/docs/需求分析.md) 当前正式定义了“解析、下载、进度、保存文件”，但没有正式定义“网页内播放原视频”。
+2. [docs/方案设计.md](/Users/shiro/Documents/Developer/free-video-downloader/docs/方案设计.md) 里的基础架构已经有前后端分离、Vite 代理和 FastAPI API 层，适合继续扩展一条“播放代理链路”。
+3. 项目已经完成视频总结、字幕提取和下载后本地文件播放，因此“原视频播放”更适合设计成一条并行能力，而不是把下载链路硬改成播放器链路。
 
-## 代码侧
+## 代码侧发现
 
-1. [frontend/src/App.vue](/Users/shiro/Documents/Developer/free-video-downloader/frontend/src/App.vue) 目前在 `onDownload()` 中立即执行 `inlinePlayerSrc.value = buildStreamUrl(...)`，这会导致点击下载后封面马上切成播放器。
-2. [frontend/src/components/VideoResult.vue](/Users/shiro/Documents/Developer/free-video-downloader/frontend/src/components/VideoResult.vue) 现在已经支持在封面区域根据 `playerSrc` 切换成 `VideoPlayer`。
-3. [app/api/download.py](/Users/shiro/Documents/Developer/free-video-downloader/app/api/download.py) 已经有 `/api/play/{task_id}`，可以在下载完成后以内联方式返回本地 MP4 文件。
-4. [app/api/parse.py](/Users/shiro/Documents/Developer/free-video-downloader/app/api/parse.py) 已经有 `/api/stream`，可用于代理源视频流做 H5 播放。
-5. 现有前端测试 [frontend/src/App.test.ts](/Users/shiro/Documents/Developer/free-video-downloader/frontend/src/App.test.ts) 目前锁定的是“点击下载就切播放器”，与新需求相反，后续必须一起调整。
+1. [app/api/parse.py](/Users/shiro/Documents/Developer/free-video-downloader/app/api/parse.py) 已提供 `/api/stream`，会代理 `Range` 请求并透传 yt-dlp 给出的上游请求头。
+2. [app/services/video_service.py](/Users/shiro/Documents/Developer/free-video-downloader/app/services/video_service.py) 的 `get_stream_source()` 目前只返回单个直链和请求头；对于音视频分离平台，只能选到“最佳可预览单路流”，不能完整表达多轨信息。
+3. [frontend/src/components/VideoPlayer.vue](/Users/shiro/Documents/Developer/free-video-downloader/frontend/src/components/VideoPlayer.vue) 当前基于原生 `<video>`，适合 MP4 这类单资源播放，但对 DASH/HLS 和多轨扩展能力较弱。
+4. [frontend/src/App.vue](/Users/shiro/Documents/Developer/free-video-downloader/frontend/src/App.vue) 已经有 `withMediaOrigin()` 这类媒体来源适配逻辑，后续接入“原视频播放地址”时可以复用。
 
-## 实施结果
+## 开源方案调研
 
-1. [frontend/src/App.vue](/Users/shiro/Documents/Developer/free-video-downloader/frontend/src/App.vue) 已改为：点击下载时仅发起下载，不再立即设置 `playerSrc`。
-2. 下载状态进入 `done` 后，页面会把封面区域切换为 `/api/play/{task_id}` 的本地文件播放器。
-3. [frontend/src/components/DownloadProgress.vue](/Users/shiro/Documents/Developer/free-video-downloader/frontend/src/components/DownloadProgress.vue) 的文案已改成“下载完成后再切换播放器”。
-4. [frontend/src/App.test.ts](/Users/shiro/Documents/Developer/free-video-downloader/frontend/src/App.test.ts) 已更新为新交互：下载过程中保持封面，完成后才显示播放器。
+1. [Video.js](https://videojs.org/) 是成熟的开源 HTML5 播放器，生态完整，适合标准 MP4/HLS/DASH 播放器改造。
+2. [Shaka Player](https://shaka-player-demo.appspot.com/docs/api/tutorial-welcome.html) 官方文档明确支持 DASH 和 HLS，适合处理自适应流和后续字幕扩展。
+3. [ArtPlayer](https://artplayer.org/document/en/start/option.html) 对中文项目更友好，原生支持播放器 UI 定制，并可接入 `hls.js`、`dash.js`、`mpegts.js` 等第三方库。
+4. [西瓜播放器 xgplayer](https://v2.h5player.bytedance.com/en/gettingStarted/) 也是成熟的前端播放器方案，支持 MP4/HLS/DASH，适合国内产品风格。
+5. [yt-dlp-web-ui](https://github.com/marcopiovanello/yt-dlp-web-ui) 和 [webui-yt-dlp](https://github.com/neoxnitro/webui-yt-dlp) 说明“解析 + 格式选择 + Web UI”这条路线成熟，但它们的重点仍在下载管理，不直接解决复杂平台的浏览器内原视频播放。
 
-## 新发现：播放器黑屏/无法播放
+## 关键技术判断
 
-1. 本地下载出的 mp4 文件本身是正常的：`h264 + aac`，容器也是标准 `mp4`，不是编码不兼容问题。
-2. 真正的风险点在 [app/api/download.py](/Users/shiro/Documents/Developer/free-video-downloader/app/api/download.py)：`/api/play/{task_id}` 之前只依赖内存中的 `_tasks` 查找文件。
-3. 当后端进程重载或任务缓存丢失时，前端播放器仍会切出来，但拿到的是 404 JSON 而不是视频流，浏览器就会显示“无法播放”。
-4. 现已改成“优先读任务缓存，失败后回退到 `downloads/` 目录按 `task_id` 找文件”，解决了播放器样式出现但媒体无法加载的问题。
+1. 如果只做“后端给一个 `/api/stream` 地址，前端 `<video src>` 直接播”，在拥有 progressive MP4 的平台上可行，但对 B 站这类常见的 DASH 音视频分离流覆盖不完整。
+2. 真正稳定的“原视频播放”需要后端先识别资源类型：
+   - Progressive 单文件
+   - HLS manifest
+   - DASH manifest
+   - 音视频分离但无 manifest 的双路直链
+3. 推荐的统一抽象不是“播放 URL”，而是“播放源描述”：
+   - `type`
+   - `video_url`
+   - `audio_url`
+   - `manifest_url`
+   - `headers`
+   - `poster`
+   - `duration`
+4. 当平台无法直接提供浏览器友好的 manifest，而只有分离的音视频直链时，P0 阶段应优先降级为“不支持原视频页内播放，请先下载后播放”，而不是硬上不稳定的伪播放。

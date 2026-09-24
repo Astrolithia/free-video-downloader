@@ -17,9 +17,17 @@ const { progress, startDownload } = useDownloader()
 const { setVideo } = useAIFeatures()
 const inlinePlayerSrc = ref('')
 
+function withMediaOrigin(path: string) {
+  if (typeof window === 'undefined') return path
+  if (window.location.port === '5173') {
+    return `${window.location.protocol}//${window.location.hostname}:8000${path}`
+  }
+  return path
+}
+
 const downloadedVideoUrl = computed(() => {
   if (progress.status !== 'done' || !progress.taskId) return ''
-  return `/api/play/${progress.taskId}`
+  return withMediaOrigin(`/api/play/${progress.taskId}`)
 })
 
 watch(videoInfo, (info) => {

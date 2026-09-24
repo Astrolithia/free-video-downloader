@@ -48,6 +48,7 @@ function onDownload() {
         <VideoPlayer
           v-if="playerSrc"
           :src="playerSrc"
+          :poster="info.thumbnail"
         />
         <img
           v-else

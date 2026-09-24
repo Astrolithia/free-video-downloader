@@ -4,6 +4,7 @@ import { useVideoPlayer } from '@/composables/useVideoPlayer'
 
 const props = defineProps<{
   src: string
+  poster?: string
 }>()
 
 const { seekTime, seekCounter } = useVideoPlayer()
@@ -23,8 +24,9 @@ function applySeek() {
   if (!video) return
 
   const seek = () => {
+    const shouldResume = !video.paused
     video.currentTime = seekTime.value
-    if (video.paused) {
+    if (shouldResume) {
       video.play().catch(() => {})
     }
   }
@@ -46,12 +48,20 @@ function applySeek() {
 watch(seekCounter, applySeek)
 watch(() => props.src, () => {
   clearPendingHandler()
+  const video = videoRef.value
+  if (video) {
+    video.load()
+  }
   if (seekCounter.value > 0) {
     applySeek()
   }
 })
 
 onMounted(() => {
+  const video = videoRef.value
+  if (video) {
+    video.load()
+  }
   if (seekCounter.value > 0) {
     applySeek()
   }
@@ -65,8 +75,9 @@ onBeforeUnmount(clearPendingHandler)
       ref="videoRef"
       :src="src"
       controls
+      :poster="poster"
       playsinline
-      preload="metadata"
+      preload="auto"
       class="w-full aspect-video bg-black"
     />
   </div>
