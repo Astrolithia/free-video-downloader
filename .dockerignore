@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# Frontend build artifacts and node_modules
+frontend/node_modules/
+frontend/dist/
+
+# Downloaded files
+downloads/
+
+# Environment files (never commit secrets)
+.env
+
+# Dev / IDE
+.DS_Store
+.vscode/
+*.log
